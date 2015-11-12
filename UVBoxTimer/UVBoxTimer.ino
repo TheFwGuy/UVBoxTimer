@@ -5,22 +5,18 @@
  *  November 2015
  *  @Brief Timer to control 12 UV fluorescent lamps with MSP430g2452
  *
- *  comment out for Parallel 4 bit mode - uncomment for I2C mode
- *  See documentation for pinout
  */
-#define I2CMODE_OPTION
-
-#ifdef I2CMODE_OPTION
-/**************************** LCD I2C Mode ************************************/
-// code for I2C display
 
 #include <Wire.h>
 #include <LCD.h>
 #include <LiquidCrystal_I2C.h>  // F Malpartida's NewLiquidCrystal library
 
-// 0x27 0x3f  // Define I2C Address 
+void updateSetting();
+
+/* Define I2C Address  */
 #define I2C_ADDR 0x3F
 #define BACKLIGHT_PIN  3
+
 #define Rs_pin  0
 #define Rw_pin  1
 #define En_pin  2
@@ -28,37 +24,17 @@
 #define D5_pin  5
 #define D6_pin  6
 #define D7_pin  7
+
 #define  LED_OFF  0
 #define  LED_ON  1
 
-LiquidCrystal_I2C  lcd(I2C_ADDR,En_pin,Rw_pin,Rs_pin,D4_pin,D5_pin,D6_pin,D7_pin);
-// end <I2C section 
-#else
-/**************************** LCD Parallel Mode *******************************/
-// Code for 4 bit Display
+#define IDLE  0
+#define START 1
+#define RUN   2
+#define STOP  3
 
-#include <FastIO.h>
-#include <LiquidCrystal.h>
+LiquidCrystal_I2C  lcd(I2C_ADDR,En_pin,Rw_pin,Rs_pin,D4_pin,D5_pin,D6_pin,D7_pin, BACKLIGHT_PIN, POSITIVE);
 
-// if it doesn't compile add pins.arduino.h in directory where is FastIO on sketchbook/library
-
-//#define   CONTRAST_PIN   9
-//#define   BACKLIGHT_PIN  7
-//#define   CONTRAST       110
-// LiquidCrystal lcd(12, 11, 5, 4, 3, 2, BACKLIGHT_PIN, POSITIVE );
-// initialize the library with the numbers of the interface pins
-LiquidCrystal lcd(P2_0, P2_1, P2_2, P2_3, P2_4, P2_5);
-// End Display 4 bit Section
-#endif
-
-/*
-  VCC LD1R Tx  Rx BTN
-   1   2   3   4   5   6   7   8   9  10
-  vcc p10 p11 p12 p13 p14 P15 P20 p21 p22
-  gnd p27 p26 TST RST P17 P16 P25 P24 P23
-  20  19  18  17  16  15  14  13  12  11
-  GND         TST RST    LD2G  
-*/
 
 /*
  *  I/O defines
@@ -71,9 +47,11 @@ LiquidCrystal lcd(P2_0, P2_1, P2_2, P2_3, P2_4, P2_5);
 #define STARTKEY   5
 
 // warning port name is supported by digital read but interrupt is not using it encoder is connected to pin 19 and 18
-#define ENC_A   P2_7
-#define ENC_B   P2_6
+#define ENC_A   P2_3
+#define ENC_B   P2_4
 
+#define KEYIsPressed(key) (!digitalRead(key))
+#define KEYIsNotPressed(key) (digitalRead(key))
 
 /*
  Demonstrates the use a 16x2 LCD display.  The LiquidCrystal
@@ -112,18 +90,31 @@ LiquidCrystal lcd(P2_0, P2_1, P2_2, P2_3, P2_4, P2_5);
 
 // encoder service
 
-volatile int TimerTime=100;
+
+long TimerTimeSec; // actual millis when timer elapse
+
+int TimerTime=100;
+int oldTimerTime=-1;
+
+int TimerSecCounter; 
+char dspBuffer[20];
+
+unsigned char status = IDLE;
+
+
 
 void encoder_do(void)
 {
-  if(digitalRead(ENC_B))
-  { if(TimerTime<10000)
-      TimerTime++;
-  }
-  else
-  { if(TimerTime>0)
-      TimerTime--;
-  }
+   if(digitalRead(ENC_B))
+   {
+      if(TimerTime<10000)
+         TimerTime++;
+   }
+   else
+   {
+      if(TimerTime>0)
+         TimerTime--;
+   }
 }
 
 void setup()
@@ -131,24 +122,14 @@ void setup()
   // put your setup code here, to run once:
   pinMode(RELAY_LAMP,OUTPUT);
   digitalWrite(RELAY_LAMP,LOW); // switch off
-  // debug
-  delay(20);
-  digitalWrite(RELAY_LAMP,HIGH); // switch on
-  delay(20);
-  digitalWrite(RELAY_LAMP,LOW); // switch off
-  
   
   pinMode(STARTKEY,INPUT_PULLUP);
-//  pinMode(STOPKEY,INPUT_PULLUP);
   pinMode(ENC_A,INPUT_PULLUP);
   pinMode(ENC_B,INPUT_PULLUP);
-//  pinMode(); STOPKEY STARTKEY
-//    pinMode(CONTRAST_PIN, OUTPUT);
-//  analogWrite ( CONTRAST_PIN, CONTRAST );
 
-  //lcd.setBacklightPin ( BACKLIGHT_PIN, POSITIVE );
-  //lcd.setBacklight ( HIGH );
-  //lcd.backlight();
+  lcd.setBacklightPin(BACKLIGHT_PIN, POSITIVE); // POSITIVE); //NEGATIVE);
+  lcd.setBacklight(LED_ON);
+  lcd.backlight();
     
   lcd.begin(16,2);               // initialize the lcd 
 
@@ -156,97 +137,78 @@ void setup()
 //  lcd.createChar (1, armsUp);    // load character to the LCD
 //  lcd.createChar (2, frownie);   // load character to the LCD
 
-#ifdef  I2CMODE_OPTION
-  lcd.setBacklightPin(BACKLIGHT_PIN, POSITIVE); // POSITIVE); //NEGATIVE);
-  lcd.setBacklight(LED_ON);
-#endif
+  lcd.clear();
   lcd.home ();                   // go home
   lcd.print("Preset       SBY");  
   lcd.setCursor ( 0, 1 );        // go to the next line
   lcd.print (" Timer ->");      
-  attachInterrupt(ENC_A,encoder_do,FALLING);
   
-  for(;;);
+  attachInterrupt(ENC_A,encoder_do,FALLING);
 }
 
-#define KEYIsPressed(key) (!digitalRead(key))
-#define KEYIsNotPressed(key) (digitalRead(key))
-
-/*int StopIsPressed(void)
-{
-  if(digitalRead(STARTKEY))
-    return(FALSE);
-  else
-    return(TRUE);
-}
-*/
-
-long TimerTimeSec; // actual millis when timer elapse
-int oldTimerTime=-1;
-int TimerSecCounter; 
-char dspBuffer[40];
 
 void loop()
 {
    // put your main code here, to run repeatedly:
    // setup loop
-   
-#if 0   
-   do
+
+   switch(status)
    {
-      if(oldTimerTime != TimerTime)
-      {
-         oldTimerTime=TimerTime;
-         lcd.setCursor ( 7, 0);        // go to Status
-         lcd.print("     ");
-         lcd.setCursor ( 7, 0);        // go to Status
-         lcd.print(TimerTime);
-      }
-      delay(20);
+      case IDLE:
+         updateSetting();
+         if(!KEYIsNotPressed(STARTKEY))
+            status = START;
+         break;
+         
+      case START:   
+         // timer loop
+         TimerTimeSec=millis(); // timer value to actual time to display timer and decrement seconds
+         TimerSecCounter=TimerTime+1; // add one to account for first update
+         digitalWrite(RELAY_LAMP,HIGH); // switch on
+         lcd.setCursor ( 13, 0);        // go to Status
+         lcd.print(" ON");
+         status = RUN;
+         break;
+      
+      case RUN:  
+         // test 1 second has elapsed 
+         if(millis()>TimerTimeSec) // 1 second elapsed
+         {
+            TimerTimeSec=millis()+1000;
+       //   sprintf(dspBuffer,"%6l",TimerSecCounter);
+            TimerSecCounter--;
+            lcd.setCursor ( 10, 1);        // go to countdown pos
+            lcd.print("     "); //dspBuffer);
+            lcd.setCursor ( 10, 1);        // go to countdown pos
+      
+            sprintf(dspBuffer,"%d",TimerSecCounter);
+            lcd.print(dspBuffer);
+         }
+            
+         updateSetting();
+         
+         if(!KEYIsNotPressed(STARTKEY) || TimerSecCounter == 0)
+            status = STOP;
+         break;
+         
+      case STOP:      
+         digitalWrite(RELAY_LAMP,LOW); // switch off
+         lcd.setCursor ( 13, 0 );        // go to status line
+         lcd.print("OFF");
+         status = IDLE;
+         break;
    }
-   while(KEYIsNotPressed(STARTKEY));
+}
 
-   // timer loop
-   TimerTimeSec=millis(); // timer value to actual time to display timer and decrement seconds
-   TimerSecCounter=TimerTime+1; // add one to account for first update
-   digitalWrite(RELAY_LAMP,HIGH); // switch on
-   lcd.setCursor ( 13, 0);        // go to Status
-   lcd.print(" ON");
-   do
+void updateSetting()
+{
+   if(oldTimerTime != TimerTime)
    {
-      // test 1 second has elapsed 
-      if(millis()>TimerTimeSec) // 1 second elapsed
-      {
-         TimerTimeSec=millis()+1000;
- //      sprintf(dspBuffer,"%6l",TimerSecCounter);
-         TimerSecCounter--;
-         lcd.setCursor ( 10, 1);        // go to countdown pos
-         lcd.print("     "); //dspBuffer);
-         lcd.setCursor ( 10, 1);        // go to countdown pos
-         lcd.print(TimerSecCounter); //dspBuffer);
-      }
-      // test also if timer setup has changed and refresh
-      if(oldTimerTime != TimerTime)
-      {
-         oldTimerTime=TimerTime;
-         lcd.setCursor ( 7, 0);        // go to Status
-         lcd.print("     ");
-         lcd.setCursor ( 7, 0);        // go to Status
-         lcd.print(TimerTime);
-      }
-      delay(20); // wait a while
+      oldTimerTime=TimerTime;
+      lcd.setCursor ( 7, 0);        // go to Status
+      lcd.print("     ");
+      lcd.setCursor ( 7, 0);        // go to Status
+      sprintf(dspBuffer,"%6d",TimerTime);
+      lcd.print(dspBuffer);
    }
-   while(KEYIsNotPressed(STARTKEY) && TimerSecCounter);
-   digitalWrite(RELAY_LAMP,LOW); // switch off
-   lcd.setCursor ( 13, 0 );        // go to status line
-   lcd.print("OFF");
-   
-#endif
-
-  delay(20);
-  digitalWrite(RELAY_LAMP,HIGH); // switch on
-  delay(20);
-  digitalWrite(RELAY_LAMP,LOW); // switch off
-
-
 }
