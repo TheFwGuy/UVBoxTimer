@@ -93,7 +93,7 @@ LiquidCrystal_I2C  lcd(I2C_ADDR,En_pin,Rw_pin,Rs_pin,D4_pin,D5_pin,D6_pin,D7_pin
 
 long TimerTimeSec; // actual millis when timer elapse
 
-int TimerTime=100;
+int TimerTime=5;
 int oldTimerTime=-1;
 
 int TimerSecCounter; 
@@ -105,15 +105,19 @@ unsigned char status = IDLE;
 
 void encoder_do(void)
 {
+   /* Only in IDLE is allowed to set up */
+   if(status != IDLE)
+      return;
+      
    if(digitalRead(ENC_B))
    {
-      if(TimerTime<10000)
-         TimerTime++;
+      if(TimerTime<7200)
+         TimerTime += 5;
    }
    else
    {
       if(TimerTime>0)
-         TimerTime--;
+         TimerTime -= 5;
    }
 }
 
