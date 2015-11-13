@@ -208,7 +208,9 @@ void updateSetting()
       lcd.setCursor ( 7, 0);        // go to Status
       lcd.print("     ");
       lcd.setCursor ( 7, 0);        // go to Status
-      sprintf(dspBuffer,"%6d",TimerTime);
-      lcd.print(dspBuffer);
+      lcd.print(TimerTime);
+      
+//      sprintf(dspBuffer,"%6d",TimerTime);
+//      lcd.print(dspBuffer);
    }
 }
