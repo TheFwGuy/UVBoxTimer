@@ -11,7 +11,10 @@
 #include <LCD.h>
 #include <LiquidCrystal_I2C.h>  // F Malpartida's NewLiquidCrystal library
 
+/* Function prototypes */
+
 void updateSetting();
+void secondsToTime(int, int *, int *, int * );
 
 /* Define I2C Address  */
 #define I2C_ADDR 0x3F
@@ -95,9 +98,13 @@ long TimerTimeSec; // actual millis when timer elapse
 
 int TimerTime=100;
 int oldTimerTime=-1;
-
 int TimerSecCounter; 
-//char dspBuffer[20];
+
+int hour;
+int minute;
+int second;
+
+char buffer[20];
 
 unsigned char status = IDLE;
 
@@ -203,9 +210,34 @@ void updateSetting()
    if(oldTimerTime != TimerTime)
    {
       oldTimerTime=TimerTime;
+      
+      secondsToTime(TimerTime, &hour, &minute, &second);
+      
       lcd.setCursor ( 7, 0);        // go to Status
       lcd.print("     ");
       lcd.setCursor ( 7, 0);        // go to Status
-      lcd.print(TimerTime);     
+      
+      sprintf(buffer, "%02d:%02d:%02d", hour, minute, second);
+      lcd.print(buffer);
+      
+//      lcd.print(TimerTime);     
    }
 }
+
+/*
+ *  secondsToTime
+ *  The function has the purpose to convert a single value in seconds into
+ *  the more traditional hours/minutes/seconds display
+ */
+void secondsToTime(int raw_seconds, int *hours, int *minutes, int *seconds )
+{
+   int temp=0;
+
+   *hours = raw_seconds/3600;
+   temp = *hours * 3600;
+   *minutes = (raw_seconds - temp)/60;
+   temp += *minutes * 60;
+   *seconds = raw_seconds - temp;
+}
+
+
