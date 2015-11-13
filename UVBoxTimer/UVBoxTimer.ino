@@ -97,7 +97,7 @@ int TimerTime=100;
 int oldTimerTime=-1;
 
 int TimerSecCounter; 
-char dspBuffer[20];
+//char dspBuffer[20];
 
 unsigned char status = IDLE;
 
@@ -180,9 +180,7 @@ void loop()
             lcd.setCursor ( 10, 1);        // go to countdown pos
             lcd.print("     "); //dspBuffer);
             lcd.setCursor ( 10, 1);        // go to countdown pos
-      
-            sprintf(dspBuffer,"%d",TimerSecCounter);
-            lcd.print(dspBuffer);
+            lcd.print(TimerSecCounter);     
          }
             
          updateSetting();
@@ -208,9 +206,6 @@ void updateSetting()
       lcd.setCursor ( 7, 0);        // go to Status
       lcd.print("     ");
       lcd.setCursor ( 7, 0);        // go to Status
-      lcd.print(TimerTime);
-      
-//      sprintf(dspBuffer,"%6d",TimerTime);
-//      lcd.print(dspBuffer);
+      lcd.print(TimerTime);     
    }
 }
