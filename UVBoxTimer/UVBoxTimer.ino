@@ -13,7 +13,7 @@
 
 /* Function prototypes */
 
-void updateSetting();
+void displaySettingTime();
 void secondsToTime(int, int *, int *, int * );
 
 /* Define I2C Address  */
@@ -46,8 +46,9 @@ LiquidCrystal_I2C  lcd(I2C_ADDR,En_pin,Rw_pin,Rs_pin,D4_pin,D5_pin,D6_pin,D7_pin
 #define RELAY_LAMP 2				/* P1_0 */
 #define RELAY_FAN  3				/* P1_1 */
 
-//#define STOPKEY    5
-#define STARTKEY   5
+#define SELBTN     13
+#define STARTBTN   5
+#define STARTLED   4
 
 // warning port name is supported by digital read but interrupt is not using it encoder is connected to pin 19 and 18
 #define ENC_A   P2_3
@@ -108,20 +109,24 @@ char buffer[20];
 
 unsigned char status = IDLE;
 
-
-
-void encoder_do(void)
+void doEncoder() 
 {
    /* Only in IDLE is allowed to set up */
    if(status != IDLE)
       return;
-      
-   if(digitalRead(ENC_B))
+
+   /* If pinA and pinB are both high or both low, it is spinning
+    * forward. If they're different, it's going backward.
+    *
+    * For more information on speeding up this process, see
+    * [Reference/PortManipulation], specifically the PIND register.
+    */
+   if (digitalRead(ENC_A) == digitalRead(ENC_B)) 
    {
       if(TimerTime<7200)
          TimerTime += 5;
    }
-   else
+   else 
    {
       if(TimerTime>0)
          TimerTime -= 5;
@@ -134,7 +139,10 @@ void setup()
   pinMode(RELAY_LAMP,OUTPUT);
   digitalWrite(RELAY_LAMP,LOW); // switch off
   
-  pinMode(STARTKEY,INPUT_PULLUP);
+  pinMode(STARTBTN,INPUT_PULLUP);
+  pinMode(STARTLED,OUTPUT);
+
+  pinMode(SELBTN,INPUT_PULLUP);
   pinMode(ENC_A,INPUT_PULLUP);
   pinMode(ENC_B,INPUT_PULLUP);
 
@@ -150,11 +158,11 @@ void setup()
 
   lcd.clear();
   lcd.home ();                   // go home
-  lcd.print("Preset       SBY");  
+  lcd.print("Preset          ");  
   lcd.setCursor ( 0, 1 );        // go to the next line
-  lcd.print (" Timer ->");      
+  lcd.print ("UVBox Timer 1.0");      
   
-  attachInterrupt(ENC_A,encoder_do,FALLING);
+  attachInterrupt(ENC_A,doEncoder,FALLING);
 }
 
 
@@ -166,18 +174,31 @@ void loop()
    switch(status)
    {
       case IDLE:
-         updateSetting();
-         if(!KEYIsNotPressed(STARTKEY))
+         displaySettingTime();
+         
+         if(KEYIsPressed(SELBTN))
+         {
+            while(KEYIsPressed(SELBTN));
+            lcd.setCursor ( 0, 1 );        // go to the next line
+            lcd.print ("UVBox Timer 1.0");
+         }
+         
+         if(KEYIsPressed(STARTBTN))
             status = START;
          break;
          
       case START:   
+         while(KEYIsPressed(STARTBTN));  /* Wait until the button is released */
+
          // timer loop
          TimerTimeSec=millis(); // timer value to actual time to display timer and decrement seconds
          TimerSecCounter=TimerTime+1; // add one to account for first update
          digitalWrite(RELAY_LAMP,HIGH); // switch on
-         lcd.setCursor ( 13, 0);        // go to Status
-         lcd.print(" ON");
+         
+         lcd.setCursor ( 0, 1 );        // go to the next line
+         lcd.print ("RUN             ");       
+//         lcd.setCursor ( 13, 0);        // go to Status
+//         lcd.print(" ON");
          status = RUN;
          break;
       
@@ -194,22 +215,28 @@ void loop()
             lcd.print(TimerSecCounter);     
          }
             
-         updateSetting();
+//         updateSetting();
          
-         if(!KEYIsNotPressed(STARTKEY) || TimerSecCounter == 0)
+         if(KEYIsPressed(STARTBTN) || TimerSecCounter == 0)
             status = STOP;
          break;
          
       case STOP:      
+         while(KEYIsPressed(STARTBTN));  /* Wait until the button is released */
+
          digitalWrite(RELAY_LAMP,LOW); // switch off
-         lcd.setCursor ( 13, 0 );        // go to status line
-         lcd.print("OFF");
+
+         lcd.setCursor ( 0, 1 );        // go to the next line
+         lcd.print ("STOP            ");       
+
+//         lcd.setCursor ( 13, 0 );        // go to status line
+//         lcd.print("OFF");
          status = IDLE;
          break;
    }
 }
 
-void updateSetting()
+void displaySettingTime()
 {
    if(oldTimerTime != TimerTime)
    {
