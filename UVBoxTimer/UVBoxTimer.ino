@@ -15,6 +15,7 @@
 
 void displaySettingTime();
 void secondsToTime(int, int *, int *, int * );
+int timeToSeconds(int , int , int );
 
 /* Define I2C Address  */
 #define I2C_ADDR 0x3F
@@ -31,13 +32,20 @@ void secondsToTime(int, int *, int *, int * );
 #define  LED_OFF  0
 #define  LED_ON  1
 
+/* Main state machine states */
+
 #define IDLE  0
 #define START 1
 #define RUN   2
 #define STOP  3
 
-LiquidCrystal_I2C  lcd(I2C_ADDR,En_pin,Rw_pin,Rs_pin,D4_pin,D5_pin,D6_pin,D7_pin, BACKLIGHT_PIN, POSITIVE);
+/* Setting state machine states */
 
+#define SET_SECONDS   0
+#define SET_MINUTES   1
+#define SET_HOURS     2
+
+LiquidCrystal_I2C  lcd(I2C_ADDR,En_pin,Rw_pin,Rs_pin,D4_pin,D5_pin,D6_pin,D7_pin, BACKLIGHT_PIN, POSITIVE);
 
 /*
  *  I/O defines
@@ -58,33 +66,6 @@ LiquidCrystal_I2C  lcd(I2C_ADDR,En_pin,Rw_pin,Rs_pin,D4_pin,D5_pin,D6_pin,D7_pin
 #define KEYIsNotPressed(key) (digitalRead(key))
 
 /*
- Demonstrates the use a 16x2 LCD display.  The LiquidCrystal
- library works with all LCD displays that are compatible with the 
- Hitachi HD44780 driver. There are many of them out there, and you
- can usually tell them by the 16-pin interface.
- 
- The circuit:
- =================================
- LCD pin              Connect to
- ---------------------------------
- 01 - GND             GND, pot
- 02 - VCC             +5V, pot
- 03 - Contrast        Pot wiper
- 04 - RS              Pin8 (P2.0)
- 05 - R/W             GND
- 06 - EN              Pin9 (P2.1)
- 07 - DB0             GND
- 08 - DB1             GND
- 09 - DB2             GND
- 10 - DB3             GND
- 11 - DB4             Pin10 (P2.2)
- 12 - DB5             Pin11 (P2.3)
- 13 - DB6             Pin12 (P2.4)
- 14 - DB7             Pin13 (P2.5)
- 15 - BL+             +5V
- 16 - BL-             GND
- =================================
-
  I2C mode 
  SDA P1_7 Pin 14
  SCL P1_6 Pin 13 
@@ -92,27 +73,31 @@ LiquidCrystal_I2C  lcd(I2C_ADDR,En_pin,Rw_pin,Rs_pin,D4_pin,D5_pin,D6_pin,D7_pin
 */
 
 
-// encoder service
-
+/*
+ *  Global variables
+ */
 
 long TimerTimeSec; // actual millis when timer elapse
 
-int TimerTime=5;
+int TimerTime=0;
 int oldTimerTime=-1;
 int TimerSecCounter; 
 
-int hour;
-int minute;
-int second;
+short hour = 0;
+short minute = 0;
+short second = 5;
 
 char buffer[20];
 
-unsigned char status = IDLE;
+unsigned char main_status = IDLE;
+unsigned char set_status  = SET_SECONDS;
+
+/* Interrupt service encoder function */
 
 void doEncoder() 
 {
    /* Only in IDLE is allowed to set up */
-   if(status != IDLE)
+   if(main_status != IDLE)
       return;
 
    /* If pinA and pinB are both high or both low, it is spinning
@@ -123,13 +108,13 @@ void doEncoder()
     */
    if (digitalRead(ENC_A) == digitalRead(ENC_B)) 
    {
-      if(TimerTime<7200)
-         TimerTime += 5;
+      if(TimerTime<80)
+         TimerTime++;
    }
    else 
    {
       if(TimerTime>0)
-         TimerTime -= 5;
+         TimerTime--;
    }
 }
 
@@ -158,11 +143,12 @@ void setup()
 
   lcd.clear();
   lcd.home ();                   // go home
+  lcd.display();
   lcd.print("Preset          ");  
   lcd.setCursor ( 0, 1 );        // go to the next line
   lcd.print ("UVBox Timer 1.0");      
   
-  attachInterrupt(ENC_A,doEncoder,FALLING);
+  attachInterrupt(ENC_A,doEncoder,CHANGE);
 }
 
 
@@ -171,20 +157,49 @@ void loop()
    // put your main code here, to run repeatedly:
    // setup loop
 
-   switch(status)
+   switch(main_status)
    {
       case IDLE:
          displaySettingTime();
-         
+
          if(KEYIsPressed(SELBTN))
          {
             while(KEYIsPressed(SELBTN));
-            lcd.setCursor ( 0, 1 );        // go to the next line
-            lcd.print ("UVBox Timer 1.0");
+            
+            set_status++;
+            if(set_status > SET_HOURS)
+               set_status = SET_SECONDS;
+               
+           lcd.setCursor ( 0, 1 );        // go to the next line
+           
+           switch(set_status)
+           {
+               case SET_SECONDS:
+                  lcd.print ("Set Seconds     ");
+                  TimerTime = second;
+                  oldTimerTime = second;
+                  break;
+
+               case SET_MINUTES:
+                  lcd.print ("Set Minutes     ");
+                  TimerTime = minute;
+                  oldTimerTime = minute;
+                  break;
+
+               case SET_HOURS:
+                  lcd.print ("Set Hours       ");
+                  TimerTime = hour;
+                  oldTimerTime = hour;
+                  break;
+                 
+//               default:
+//                  set_status = SET_SECONDS;
+//                  break;   
+            }      
          }
-         
+               
          if(KEYIsPressed(STARTBTN))
-            status = START;
+            main_status = START;
          break;
          
       case START:   
@@ -192,14 +207,13 @@ void loop()
 
          // timer loop
          TimerTimeSec=millis(); // timer value to actual time to display timer and decrement seconds
-         TimerSecCounter=TimerTime+1; // add one to account for first update
+         TimerSecCounter=timeToSeconds(hour, minute,second)+1; // add one to account for first update
+
          digitalWrite(RELAY_LAMP,HIGH); // switch on
          
          lcd.setCursor ( 0, 1 );        // go to the next line
          lcd.print ("RUN             ");       
-//         lcd.setCursor ( 13, 0);        // go to Status
-//         lcd.print(" ON");
-         status = RUN;
+         main_status = RUN;
          break;
       
       case RUN:  
@@ -210,15 +224,13 @@ void loop()
        //   sprintf(dspBuffer,"%6l",TimerSecCounter);
             TimerSecCounter--;
             lcd.setCursor ( 10, 1);        // go to countdown pos
-            lcd.print("     "); //dspBuffer);
+            lcd.print("     ");            // clean space space
             lcd.setCursor ( 10, 1);        // go to countdown pos
             lcd.print(TimerSecCounter);     
          }
             
-//         updateSetting();
-         
          if(KEYIsPressed(STARTBTN) || TimerSecCounter == 0)
-            status = STOP;
+            main_status = STOP;
          break;
          
       case STOP:      
@@ -229,9 +241,11 @@ void loop()
          lcd.setCursor ( 0, 1 );        // go to the next line
          lcd.print ("STOP            ");       
 
-//         lcd.setCursor ( 13, 0 );        // go to status line
-//         lcd.print("OFF");
-         status = IDLE;
+         TimerTime = second;      // Set default on last second value 
+         oldTimerTime = second;
+
+         main_status = IDLE;
+         set_status  = SET_SECONDS;
          break;
    }
 }
@@ -240,9 +254,30 @@ void displaySettingTime()
 {
    if(oldTimerTime != TimerTime)
    {
+      switch(set_status)
+      {
+         case SET_SECONDS:
+            if(TimerTime > 59)
+               TimerTime = 59;
+            second = TimerTime;   
+            break;
+
+         case SET_MINUTES:
+            if(TimerTime > 59)
+               TimerTime = 59;
+            minute = TimerTime;   
+            break;
+
+         case SET_HOURS:
+            if(TimerTime > 2)
+               TimerTime = 2;
+            hour = TimerTime;   
+            break;
+      }
+     
       oldTimerTime=TimerTime;
       
-      secondsToTime(TimerTime, &hour, &minute, &second);
+ //     secondsToTime(TimerTime, &hour, &minute, &second);
       
       lcd.setCursor ( 7, 0);        // go to Status
       lcd.print("     ");
@@ -269,6 +304,19 @@ void secondsToTime(int raw_seconds, int *hours, int *minutes, int *seconds )
    *minutes = (raw_seconds - temp)/60;
    temp += *minutes * 60;
    *seconds = raw_seconds - temp;
+}
+
+/*
+ *  timeToSeconds
+ *  The function has the purpose to create a single value in seconds from hour/minutes/seconds
+ */
+int timeToSeconds(int hours, int minutes, int seconds )
+{
+   int raw_seconds;
+   
+   raw_seconds = (hours * 3600) + (minutes * 60) + seconds;
+   
+   return(raw_seconds);
 }
 
 
