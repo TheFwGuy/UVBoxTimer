@@ -126,6 +126,7 @@ void setup()
   
   pinMode(STARTBTN,INPUT_PULLUP);
   pinMode(STARTLED,OUTPUT);
+  digitalWrite(STARTLED,LOW); // Pushbutton LED off
 
   pinMode(SELBTN,INPUT_PULLUP);
   pinMode(ENC_A,INPUT_PULLUP);
@@ -210,6 +211,7 @@ void loop()
          TimerSecCounter=timeToSeconds(hour, minute,second)+1; // add one to account for first update
 
          digitalWrite(RELAY_LAMP,HIGH); // switch on
+         digitalWrite(STARTLED,HIGH);   // Pushbutton LED on
          
          lcd.setCursor ( 0, 1 );        // go to the next line
          lcd.print ("RUN             ");       
@@ -237,7 +239,8 @@ void loop()
          while(KEYIsPressed(STARTBTN));  /* Wait until the button is released */
 
          digitalWrite(RELAY_LAMP,LOW); // switch off
-
+         digitalWrite(STARTLED,LOW);   // Pushbutton LED off
+ 
          lcd.setCursor ( 0, 1 );        // go to the next line
          lcd.print ("STOP            ");       
 
