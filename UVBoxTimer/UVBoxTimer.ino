@@ -13,7 +13,8 @@
 
 /* Function prototypes */
 
-void displaySettingTime();
+void settingManagement();
+void displaySetting();
 void secondsToTime(int, short *, short *, short * );
 void displayTime(short, short, short);
 int timeToSeconds(int , int , int );
@@ -38,14 +39,16 @@ int timeToSeconds(int , int , int );
 #define IDLE  0
 #define START 1
 #define RUN   2
-#define END   3
+#define ALR   3
 #define STOP  4
+#define END   5
 
 /* Setting state machine states */
 
 #define SET_SECONDS   0
 #define SET_MINUTES   1
 #define SET_HOURS     2
+#define SET_SAVINGS   3
 
 LiquidCrystal_I2C  lcd(I2C_ADDR,En_pin,Rw_pin,Rs_pin,D4_pin,D5_pin,D6_pin,D7_pin, BACKLIGHT_PIN, POSITIVE);
 
@@ -61,7 +64,7 @@ LiquidCrystal_I2C  lcd(I2C_ADDR,En_pin,Rw_pin,Rs_pin,D4_pin,D5_pin,D6_pin,D7_pin
 
 #define BUZZER     6            /* P1_4 */
 
-#define SELBTN     13            /* P2_5 */
+#define SELBTN     13           /* P2_5 */
 
 // warning port name is supported by digital read but interrupt is not using it encoder is connected to pin 19 and 18
 #define ENC_A   P2_3
@@ -86,6 +89,7 @@ long TimerTimeSec; // actual millis when timer elapse
 
 int TimerTime=0;
 int oldTimerTime=0;
+unsigned char saving_flag = 0;		/* 0 - don't save - 1 - save */
 int TimerSecCounter; 
 
 short hour = 0;
@@ -174,37 +178,8 @@ void loop()
    switch(main_status)
    {
       case IDLE:
-         displaySettingTime();
-
-         if(KEYIsPressed(SELBTN))
-         {
-            while(KEYIsPressed(SELBTN));
-            
-            set_status++;
-            if(set_status > SET_HOURS)
-               set_status = SET_SECONDS;
-               
-            force_display_setting = 1;   
-
-           switch(set_status)
-           {
-               case SET_SECONDS:
-                  TimerTime = second;
-                  oldTimerTime = second;
-                  break;
-
-               case SET_MINUTES:
-                  TimerTime = minute;
-                  oldTimerTime = minute;
-                  break;
-
-               case SET_HOURS:
-                  TimerTime = hour;
-                  oldTimerTime = hour;
-                  break;
-            }      
-         }
-               
+         settingManagement();		/* Handle settings */
+		 
          if(KEYIsPressed(STARTBTN) && !(hour==0 && minute == 0 && second == 0))
             main_status = START;
          break;
@@ -234,34 +209,39 @@ void loop()
             secondsToTime(TimerSecCounter, &run_hour, &run_minute, &run_second);
             
             displayTime(run_hour, run_minute, run_second);        
-
-//            lcd.setCursor ( 10, 1);        // go to countdown pos
-//            lcd.print("     ");            // clean space space
-//            lcd.setCursor ( 10, 1);        // go to countdown pos
-//            lcd.print(TimerSecCounter);     
          }
             
          if(KEYIsPressed(STARTBTN))
             main_status = STOP;
          if(TimerSecCounter == 0)
-            main_status = END;
+            main_status = ALR;
          break;
-         
-      case STOP:
-      case END:      
-         while(KEYIsPressed(STARTBTN));  /* Wait until the button is released */
-
+             
+      case ALR:
          digitalWrite(RELAY_LAMP,LOW); // switch off
          digitalWrite(STARTLED,LOW);   // Pushbutton LED off
-
-         if(main_status == STOP)
+         lcd.setCursor ( 0, 1 );        // go to the next line
+         lcd.print ("Action: END     ");       
+         tone(BUZZER, 550);            /* Emit tone */
+      
+      case STOP:
+         if(KEYIsPressed(STARTBTN))
          {
+            while(KEYIsPressed(STARTBTN));  /* Wait until the button is released */
+            digitalWrite(RELAY_LAMP,LOW); // switch off
+            digitalWrite(STARTLED,LOW);   // Pushbutton LED off
+            noTone(BUZZER);                  /* Stop tone */
+
             lcd.setCursor ( 0, 1 );        // go to the next line
             lcd.print ("Action: STOP    ");       
             while(KEYIsNotPressed(STARTBTN));  /* Wait until the button is pressed */
             while(KEYIsPressed(STARTBTN));  /* Wait until the button is released */
+
+            main_status = END;
          }
- 
+         break;
+         
+      case END:      
          lcd.setCursor ( 0, 1 );        // go to the next line
          lcd.print ("Action: END     ");       
    
@@ -276,7 +256,66 @@ void loop()
    }
 }
 
-void displaySettingTime()
+
+/*
+ *  settingManagement function
+ *  This function manage the setting state machine.
+ *  This state machine is working only when the main state machine is in IDLE, otherwise it is never called.
+ */
+void settingManagement()
+{
+   displaySetting();
+
+   if(KEYIsPressed(SELBTN))
+    {
+       while(KEYIsPressed(SELBTN));
+                         
+       force_display_setting = 1;   
+
+       switch(set_status)
+       {
+         case SET_SECONDS:
+            TimerTime = minute;
+            oldTimerTime = minute;
+            break;
+
+         case SET_MINUTES:
+            TimerTime = hour;
+            oldTimerTime = hour;
+            break;
+
+         case SET_HOURS:
+            TimerTime = 1;
+            oldTimerTime = 1;
+            saving_flag = 1;
+            break;
+ 
+        case SET_SAVINGS:
+            TimerTime = second;
+            oldTimerTime = second;
+			
+	    /* Button pushed in this state - if flag OK save value in eeprom */
+            if(saving_flag)
+	    {
+	       /* TBD - save value in eeprom */
+	       saving_flag = 0;
+	    }
+	    break;
+       }     
+
+       set_status++;
+       if(set_status > SET_SAVINGS)
+          set_status = SET_SECONDS;
+	  
+   }
+}
+
+/*
+ *  displaySetting function
+ *  This function manage the setting state machine.
+ *  This state machine is working only when the main state machine is in IDLE, otherwise it is never called.
+ */
+void displaySetting()
 {
    if(oldTimerTime != TimerTime || force_display_setting)
    {
@@ -305,7 +344,23 @@ void displaySettingTime()
                TimerTime = 2;
             hour = TimerTime;   
             break;
-      }
+
+	case SET_SAVINGS:
+	    switch(TimerTime)
+            {
+	       case 0:
+                  lcd.print ("Save ?      No  ");
+                  break;
+	      case 1:
+                  lcd.print ("Save ?      Yes ");
+		  break;		  
+	    }
+			
+            if(TimerTime > 1)
+               TimerTime = 1;
+            saving_flag = TimerTime;   
+            break;
+       }
      
       oldTimerTime=TimerTime;
       
@@ -322,6 +377,12 @@ void displayTime(short hours, short minutes, short seconds)
 
    sprintf(buffer, "%02d:%02d:%02d", hours, minutes, seconds);
    lcd.print(buffer);         
+   
+//            lcd.setCursor ( 10, 1);        // go to countdown pos
+//            lcd.print("     ");            // clean space space
+//            lcd.setCursor ( 10, 1);        // go to countdown pos
+//            lcd.print(TimerSecCounter);     
+   
 }
 
 /*
