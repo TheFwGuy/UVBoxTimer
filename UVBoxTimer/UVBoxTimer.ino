@@ -51,12 +51,15 @@ LiquidCrystal_I2C  lcd(I2C_ADDR,En_pin,Rw_pin,Rs_pin,D4_pin,D5_pin,D6_pin,D7_pin
  *  I/O defines
  */
 
-#define RELAY_LAMP 2				/* P1_0 */
-#define RELAY_FAN  3				/* P1_1 */
+#define RELAY_LAMP 2		/* P1_0 */
+#define RELAY_FAN  3	        /* P1_1 */
 
-#define SELBTN     13
-#define STARTBTN   5
-#define STARTLED   4
+#define STARTLED   4            /* P1_2 */
+#define STARTBTN   5            /* P1_3 */
+
+#define BUZZER     6            /* P1_4 */
+
+#define SELBTN     13            /* P2_5 */
 
 // warning port name is supported by digital read but interrupt is not using it encoder is connected to pin 19 and 18
 #define ENC_A   P2_3
@@ -131,6 +134,8 @@ void setup()
   pinMode(SELBTN,INPUT_PULLUP);
   pinMode(ENC_A,INPUT_PULLUP);
   pinMode(ENC_B,INPUT_PULLUP);
+
+  pinMode(BUZZER,OUTPUT);
 
   lcd.setBacklightPin(BACKLIGHT_PIN, POSITIVE); // POSITIVE); //NEGATIVE);
   lcd.setBacklight(LED_ON);
