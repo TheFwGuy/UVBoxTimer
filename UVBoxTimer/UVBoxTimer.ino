@@ -90,6 +90,7 @@ long TimerTimeSec; // actual millis when timer elapse
 int TimerTime=0;
 int oldTimerTime=0;
 unsigned char saving_flag = 0;		/* 0 - don't save - 1 - save */
+unsigned char toggle_flag = 0;
 int TimerSecCounter; 
 
 short hour = 0;
@@ -212,38 +213,70 @@ void loop()
          }
             
          if(KEYIsPressed(STARTBTN))
+         {
+            digitalWrite(RELAY_LAMP,LOW); // switch off
+            digitalWrite(STARTLED,LOW);   // Pushbutton LED off
+            
+            lcd.setCursor ( 0, 1 );        // go to the next line
+            lcd.print ("Action: STOP    ");                   
+
+            while(KEYIsPressed(STARTBTN));  /* Wait until the button is released */
+           
             main_status = STOP;
+         }
+         
          if(TimerSecCounter == 0)
+         {
+            digitalWrite(RELAY_LAMP,LOW); // switch off
+            digitalWrite(STARTLED,LOW);   // Pushbutton LED off
+
+            lcd.setCursor ( 0, 1 );        // go to the next line
+            lcd.print ("Action: EXPIRED!");       
+            
             main_status = ALR;
+         }
          break;
              
       case ALR:
-         digitalWrite(RELAY_LAMP,LOW); // switch off
-         digitalWrite(STARTLED,LOW);   // Pushbutton LED off
-         lcd.setCursor ( 0, 1 );        // go to the next line
-         lcd.print ("Action: END     ");       
          tone(BUZZER, 550);            /* Emit tone */
+         main_status = STOP;
+         break;
       
       case STOP:
+         /* Waiting to press the button */
+         
+         if(toggle_flag)
+         {
+            digitalWrite(STARTLED,LOW);   // Pushbutton LED off
+            toggle_flag=0;
+         }
+         else
+         {
+            digitalWrite(STARTLED,HIGH);   // Pushbutton LED on
+            toggle_flag=1;
+         }
+         delay(200);
+         
+         
          if(KEYIsPressed(STARTBTN))
          {
             while(KEYIsPressed(STARTBTN));  /* Wait until the button is released */
-            digitalWrite(RELAY_LAMP,LOW); // switch off
-            digitalWrite(STARTLED,LOW);   // Pushbutton LED off
-            noTone(BUZZER);                  /* Stop tone */
 
-            lcd.setCursor ( 0, 1 );        // go to the next line
-            lcd.print ("Action: STOP    ");       
-            while(KEYIsNotPressed(STARTBTN));  /* Wait until the button is pressed */
-            while(KEYIsPressed(STARTBTN));  /* Wait until the button is released */
+//            while(KEYIsNotPressed(STARTBTN));  /* Wait until the button is pressed */
+//            while(KEYIsPressed(STARTBTN));  /* Wait until the button is released */
+
+            digitalWrite(STARTLED,LOW);   // Pushbutton LED off
 
             main_status = END;
          }
          break;
          
       case END:      
-         lcd.setCursor ( 0, 1 );        // go to the next line
-         lcd.print ("Action: END     ");       
+         noTone(BUZZER);                  /* Stop tone */
+         force_display_setting = 1;   
+      
+//         lcd.setCursor ( 0, 1 );        // go to the next line
+//         lcd.print ("Action: END     ");       
    
          TimerTime = second;      // Set default on last second value 
          oldTimerTime = second;
