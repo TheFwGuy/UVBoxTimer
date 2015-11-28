@@ -20,6 +20,7 @@ void displayTime(short, short, short);
 int timeToSeconds(int , int , int );
 
 /* Define I2C Address  */
+//#define I2C_ADDR 0x3F
 #define I2C_ADDR 0x3F
 #define BACKLIGHT_PIN  3
 
@@ -67,8 +68,8 @@ LiquidCrystal_I2C  lcd(I2C_ADDR,En_pin,Rw_pin,Rs_pin,D4_pin,D5_pin,D6_pin,D7_pin
 #define SELBTN     13           /* P2_5 */
 
 // warning port name is supported by digital read but interrupt is not using it encoder is connected to pin 19 and 18
-#define ENC_A   P2_3
-#define ENC_B   P2_4
+#define ENC_A   P2_4
+#define ENC_B   P2_3
 
 #define KEYIsPressed(key) (!digitalRead(key))
 #define KEYIsNotPressed(key) (digitalRead(key))
@@ -164,7 +165,8 @@ void setup()
   
   displayTime(hour, minute, second);        
   
-  attachInterrupt(ENC_A,doEncoder,CHANGE);
+//  attachInterrupt(ENC_A,doEncoder,CHANGE);
+  attachInterrupt(ENC_A,doEncoder,RISING);
 }
 
 
