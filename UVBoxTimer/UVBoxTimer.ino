@@ -3,13 +3,18 @@
  *  @Auth Roberto Romano
  *  @Auth TheFwGuy
  *  November 2015
- *  @Brief Timer to control 12 UV fluorescent lamps with MSP430g2452
+ *  @Brief Timer to control 12 UV fluorescent lamps with MSP430g2553
+ *
+ *  A LCD display, 16 x 2, is used to display information.
+ *  The top line shows always the timer value.
+ *  The bottom line shows menu' and indications.
  *
  */
 
 #include <Wire.h>
 #include <LCD.h>
 #include <LiquidCrystal_I2C.h>  // F Malpartida's NewLiquidCrystal library
+#include "MspFlash.h"
 
 /* Function prototypes */
 
@@ -17,10 +22,13 @@ void settingManagement();
 void displaySetting();
 void secondsToTime(int, short *, short *, short * );
 void displayTime(short, short, short);
+void displayMenu(unsigned char, short);
 int timeToSeconds(int , int , int );
 
-/* Define I2C Address  */
-//#define I2C_ADDR 0x3F
+/* 
+ *  I2C display defines
+ */
+ 
 #define I2C_ADDR 0x3F
 #define BACKLIGHT_PIN  3
 
@@ -32,10 +40,17 @@ int timeToSeconds(int , int , int );
 #define D6_pin  6
 #define D7_pin  7
 
-#define  LED_OFF  0
-#define  LED_ON  1
+LiquidCrystal_I2C  lcd(I2C_ADDR,En_pin,Rw_pin,Rs_pin,D4_pin,D5_pin,D6_pin,D7_pin, BACKLIGHT_PIN, POSITIVE);
 
-/* Main state machine states */
+/*
+ *  Generic defines
+ */
+#define  OFF  0
+#define  ON  1
+
+#define DISPLAY_TIME	/* Comment this out in order to display seconds countdwon */
+
+/* Main state machine states defines */
 
 #define IDLE  0
 #define START 1
@@ -44,33 +59,36 @@ int timeToSeconds(int , int , int );
 #define STOP  4
 #define END   5
 
-/* Setting state machine states */
+/* Setting state machine states defines */
 
-#define SET_SECONDS   0
-#define SET_MINUTES   1
-#define SET_HOURS     2
-#define SET_SAVINGS   3
-
-LiquidCrystal_I2C  lcd(I2C_ADDR,En_pin,Rw_pin,Rs_pin,D4_pin,D5_pin,D6_pin,D7_pin, BACKLIGHT_PIN, POSITIVE);
+#define READ_PRESETS  0
+#define SET_SECONDS   1
+#define SET_MINUTES   2
+#define SET_HOURS     3
+#define SAVE_PRESETS  4
 
 /*
  *  I/O defines
  */
 
 #define RELAY_LAMP 2		/* P1_0 */
-#define RELAY_FAN  3	        /* P1_1 */
 
-#define STARTLED   4            /* P1_2 */
-#define STARTBTN   5            /* P1_3 */
+#define STARTBTN   5        /* P1_3 */
+#define STARTLED   6        /* P1_4 */
+#define RELAY_FAN  7	    /* P1_5 */
 
-#define BUZZER     6            /* P1_4 */
+#define BUZZER     8        /* P2_0 */
 
-#define SELBTN     13           /* P2_5 */
+#define SELBTN     13       /* P2_5 */
 
 // warning port name is supported by digital read but interrupt is not using it encoder is connected to pin 19 and 18
 #define ENC_A   P2_4
 #define ENC_B   P2_3
 
+/*
+ *  Macro defines
+ */
+ 
 #define KEYIsPressed(key) (!digitalRead(key))
 #define KEYIsNotPressed(key) (digitalRead(key))
 
@@ -78,9 +96,14 @@ LiquidCrystal_I2C  lcd(I2C_ADDR,En_pin,Rw_pin,Rs_pin,D4_pin,D5_pin,D6_pin,D7_pin
  I2C mode 
  SDA P1_7 Pin 14
  SCL P1_6 Pin 13 
-
 */
 
+/*
+ *  Flash define
+ *  Uses Segment D - 64 bytes - 2 bytes for a time - max allowed 32 presets
+ *  Used only 10 presets
+ */
+#define flash SEGMENT_D 
 
 /*
  *  Global variables
@@ -88,10 +111,9 @@ LiquidCrystal_I2C  lcd(I2C_ADDR,En_pin,Rw_pin,Rs_pin,D4_pin,D5_pin,D6_pin,D7_pin
 
 long TimerTimeSec; // actual millis when timer elapse
 
-int TimerTime=0;
-int oldTimerTime=0;
-unsigned char saving_flag = 0;		/* 0 - don't save - 1 - save */
-unsigned char toggle_flag = 0;
+int EncoderRead=0;
+int oldEncoderRead=0;
+
 int TimerSecCounter; 
 
 short hour = 0;
@@ -100,11 +122,23 @@ short second = 0;
 
 char buffer[20];
 
+unsigned char saving_flag = 0;		        /* 0 - don't save - 1 - save */
+unsigned char toggle_flag = 0;
 unsigned char main_status = IDLE;
-unsigned char set_status  = SET_SECONDS;
+unsigned char set_status  = LOAD_PRESETS;
 unsigned char force_display_setting = 0;
 
-/* Interrupt service encoder function */
+const char time_menu[]   = "Time            ";
+const char logo_menu[]   = "UVBox Timer 1.0 ";
+const char preset_menu[] = "Preset #        ";
+const char select_menu[] = "Set             ";
+const char run_menu[]    = "                ";
+
+/**
+ *  @fn doEncoder
+ *  @brief Interrupt service encoder function 
+ *  The read has an upper limt to 80 and a lower limit of 0
+ */
 
 void doEncoder() 
 {
@@ -120,13 +154,13 @@ void doEncoder()
     */
    if (digitalRead(ENC_A) == digitalRead(ENC_B)) 
    {
-      if(TimerTime<80)
-         TimerTime++;
+      if(EncoderRead<80)
+         EncoderRead++;
    }
    else 
    {
-      if(TimerTime>0)
-         TimerTime--;
+      if(EncoderRead>0)
+         EncoderRead--;
    }
 }
 
@@ -152,16 +186,12 @@ void setup()
     
   lcd.begin(16,2);               // initialize the lcd 
 
-//  lcd.createChar (0, smiley);    // load character to the LCD
-//  lcd.createChar (1, armsUp);    // load character to the LCD
-//  lcd.createChar (2, frownie);   // load character to the LCD
-
   lcd.clear();
   lcd.home ();                   // go home
   lcd.display();
-  lcd.print("Time            ");  
+  lcd.print(time_menu);  
   lcd.setCursor ( 0, 1 );        // go to the next line
-  lcd.print ("UVBox Timer 1.0");      
+  lcd.print (logo_menu);      
   
   displayTime(hour, minute, second);        
   
@@ -280,8 +310,8 @@ void loop()
 //         lcd.setCursor ( 0, 1 );        // go to the next line
 //         lcd.print ("Action: END     ");       
    
-         TimerTime = second;      // Set default on last second value 
-         oldTimerTime = second;
+         EncoderRead = second;      // Set default on last second value 
+         oldEncoderRead = second;
 
          main_status = IDLE;
          set_status  = SET_SECONDS;
@@ -302,32 +332,33 @@ void settingManagement()
    displaySetting();
 
    if(KEYIsPressed(SELBTN))
-    {
-       while(KEYIsPressed(SELBTN));
+   {
+      while(KEYIsPressed(SELBTN));
                          
-       force_display_setting = 1;   
+      force_display_setting = 1;   
 
-       switch(set_status)
-       {
+      switch(set_status)
+      {
          case SET_SECONDS:
-            TimerTime = minute;
-            oldTimerTime = minute;
+            EncoderRead = minute;
+            oldEncoderRead = minute;
             break;
 
          case SET_MINUTES:
-            TimerTime = hour;
-            oldTimerTime = hour;
+            EncoderRead = hour;
+            oldEncoderRead = hour;
             break;
 
          case SET_HOURS:
-            TimerTime = 1;
-            oldTimerTime = 1;
+            EncoderRead = 1;
+            oldEncoderRead = 1;
             saving_flag = 1;
             break;
  
-        case SET_SAVINGS:
-            TimerTime = second;
-            oldTimerTime = second;
+        case READ_PRESETS:
+        case SAVE_PRESETS:
+            EncoderRead = second;
+            oldEncoderRead = second;
 			
 	    /* Button pushed in this state - if flag OK save value in eeprom */
             if(saving_flag)
@@ -339,8 +370,8 @@ void settingManagement()
        }     
 
        set_status++;
-       if(set_status > SET_SAVINGS)
-          set_status = SET_SECONDS;
+       if(set_status > SAVE_PRESETS)
+          set_status = LOAD_PRESETS;
 	  
    }
 }
@@ -352,7 +383,7 @@ void settingManagement()
  */
 void displaySetting()
 {
-   if(oldTimerTime != TimerTime || force_display_setting)
+   if(oldEncoderRead != EncoderRead || force_display_setting)
    {
       force_display_setting = 0;
 
@@ -361,27 +392,27 @@ void displaySetting()
       {
          case SET_SECONDS:
             lcd.print ("Set Seconds     ");
-            if(TimerTime > 59)
-               TimerTime = 59;
-            second = TimerTime;   
+            if(EncoderRead > 59)
+               EncoderRead = 59;
+            second = EncoderRead;   
             break;
 
          case SET_MINUTES:
             lcd.print ("Set Minutes     ");
-            if(TimerTime > 59)
-               TimerTime = 59;
-            minute = TimerTime;   
+            if(EncoderRead > 59)
+               EncoderRead = 59;
+            minute = EncoderRead;   
             break;
 
          case SET_HOURS:
             lcd.print ("Set Hours       ");
-            if(TimerTime > 2)
-               TimerTime = 2;
-            hour = TimerTime;   
+            if(EncoderRead > 2)
+               EncoderRead = 2;
+            hour = EncoderRead;   
             break;
 
-	case SET_SAVINGS:
-	    switch(TimerTime)
+	case SAVE_PRESETS:
+	    switch(EncoderRead)
             {
 	       case 0:
                   lcd.print ("Save ?      No  ");
@@ -391,38 +422,95 @@ void displaySetting()
 		  break;		  
 	    }
 			
-            if(TimerTime > 1)
-               TimerTime = 1;
-            saving_flag = TimerTime;   
+            if(EncoderRead > 1)
+               EncoderRead = 1;
+            saving_flag = EncoderRead;   
             break;
        }
      
-      oldTimerTime=TimerTime;
+      oldEncoderRead=EncoderRead;
       
       displayTime(hour, minute, second);
           
    }
 }
 
+/**
+ *  @fn displayTime
+ *  @brief Display the time on the first LCD line
+ *  @param hours - value for hours
+ *  @param minutes - value for minutes
+ *  @param seconds - value for seconds
+ */
 void displayTime(short hours, short minutes, short seconds)
 {
-   lcd.setCursor ( 7, 0);        // go to Status
+   lcd.setCursor ( 7, 0);        /* Go after the writing Time */
    lcd.print("     ");
-   lcd.setCursor ( 7, 0);        // go to Status
 
+#if DISPLAY_TIME
+   lcd.setCursor ( 7, 0);        
    sprintf(buffer, "%02d:%02d:%02d", hours, minutes, seconds);
    lcd.print(buffer);         
-   
-//            lcd.setCursor ( 10, 1);        // go to countdown pos
-//            lcd.print("     ");            // clean space space
-//            lcd.setCursor ( 10, 1);        // go to countdown pos
-//            lcd.print(TimerSecCounter);     
-   
+#else
+   lcd.setCursor ( 10, 1);        
+   lcd.print(TimerSecCounter);     
+#endif
 }
 
-/*
- *  secondsToTime
- *  The function has the purpose to convert a single value in seconds into
+/**
+ *  @fn displayMenu
+ *  @brief Display the menu on the second LCD line
+ *  @param hours - value for hours
+ *  @param minutes - value for minutes
+ *  @param seconds - value for seconds
+ */
+void displayMenu(short hours, short minutes, short seconds)
+{
+   short tmp_value = 0;
+
+   
+   lcd.setCursor ( 0, 1 );        /* Position on the second line */
+
+   /* Display menu title */
+   switch(set_status)
+   {
+      case LOAD_PRESETS:
+	     break;
+      case SET_SECONDS:
+      case SET_MINUTES:
+      case SET_HOURS:
+         lcd.print (set_menu);
+	     break;
+      case SAVE_PRESETS:
+	     break;
+   }
+
+   /* Display menu value */
+   switch(set_status)
+   {
+      case LOAD_PRESETS:
+	     break;
+      case SET_SECONDS:
+         lcd.setCursor ( 4, 1 );        /* Position on the second line */
+		 
+      case SET_MINUTES:
+         lcd.setCursor ( 4, 1 );        /* Position on the second line */
+      case SET_HOURS:
+         lcd.setCursor ( 4, 1 );        /* Position on the second line */
+         lcd.print (set_menu);
+	     break;
+      case SAVE_PRESETS:
+	     break;
+   }
+}
+
+
+
+
+
+/**
+ *  @fn secondsToTime
+ *  @brief The function has the purpose to convert a single value in seconds into
  *  the more traditional hours/minutes/seconds display
  */
 void secondsToTime(int raw_seconds, short *hours, short *minutes, short *seconds )
@@ -448,5 +536,112 @@ int timeToSeconds(int hours, int minutes, int seconds )
    
    return(raw_seconds);
 }
+
+
+
+/**
+ *  @fn settingManagement
+ *  @brief setting state machine management
+ *  This state machine is working only when the main state machine is in IDLE, otherwise it is never called.
+ */
+void settingManagement()
+{
+   unsigned char enc_read = OFF;
+   unsigned char btn_read = OFF;
+
+   /* Reading selection push button status */
+   if(KEYIsPressed(SELBTN))
+   {
+      while(KEYIsPressed(SELBTN));
+	  btn_read = ON;
+   }
+
+   /* Determine if there is an encoder change value */   
+   if(oldEncoderRead != EncoderRead )
+   {
+      enc_read = ON;	 
+   }
+   
+   /* Continue only if there is an action */
+   if(!enc_read && !btn_read)
+      return;
+	  
+   switch(set_status)
+   {
+      case LOAD_PRESETS:
+         if(enc_read)
+         {
+		 
+		 }
+		 
+		 if(btn_read)
+		 {
+		    /* Execute action */
+		 }
+		 break;
+		 
+      case SET_SECONDS:
+         if(enc_read)
+         {
+            if(EncoderRead > 59)
+               EncoderRead = 59;
+            second = EncoderRead;   
+         }
+		 
+		 if(btn_read)
+		 {
+            EncoderRead = minute;
+            oldEncoderRead = minute;
+		    set_status = SET_MINUTES;
+		 }
+         break;
+
+      case SET_MINUTES:
+         if(enc_read)
+         {
+            if(EncoderRead > 59)
+               EncoderRead = 59;
+            minute = EncoderRead;   
+         }
+
+		 if(btn_read)
+		 {
+            EncoderRead = hour;
+            oldEncoderRead = hour;
+		    set_status = SET_HOURS;
+		 }
+         break;
+
+      case SET_HOURS:
+         if(enc_read)
+         {
+            if(EncoderRead > 2)
+               EncoderRead = 2;
+            hour = EncoderRead;   
+         }
+		 
+		 if(btn_read)
+		 {
+            EncoderRead = minute;
+            oldEncoderRead = minute;
+		    set_status = SAVE_PRESETS;
+		 }
+         break;
+		 
+      case SAVE_PRESETS:
+
+         if(btn_read)
+		 {
+		    set_status = LOAD_PRESETS;
+		 }
+	     break;
+   }
+}
+
+
+
+
+
+
 
 
