@@ -11,3 +11,6 @@ It is necessary to have these libraries installed in the library directory:
 - LiquidCrystal
 - SD
 
+Schematics
+
+The schematic used to generate the PCB is under Eagle, UVBoxTimer_g, UVBoxSchematic_r
